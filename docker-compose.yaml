@@ -1,0 +1,39 @@
+# Coolify deployment of Paperclip.
+# Builds the server image from upstream paperclipai/paperclip pinned at a tag
+# via Docker Compose's remote git build context. This repo owns only the
+# deploy config; the app source stays at upstream.
+#
+# Uses the shared Coolify Postgres instance (bokc0gko8g0s4g0sgs484s00) on
+# database 'paperclip' with user 'paperclip'. Connection happens over the
+# coolify Docker network.
+#
+# Bump upstream by editing the build.context tag fragment, commit, redeploy.
+
+services:
+  server:
+    build:
+      context: https://github.com/paperclipai/paperclip.git#v2026.416.0
+      dockerfile: Dockerfile
+    expose:
+      - "3100"
+    environment:
+      DATABASE_URL: "${DATABASE_URL:?DATABASE_URL must be set}"
+      PORT: "3100"
+      HOST: "0.0.0.0"
+      SERVE_UI: "true"
+      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
+      PAPERCLIP_PUBLIC_URL: "https://paperclip.home.anteras.org"
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set}"
+      OPENAI_BASE_URL: "https://openrouter.ai/api/v1"
+    volumes:
+      - paperclip-data:/paperclip
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 6g
+
+volumes:
+  paperclip-data:
