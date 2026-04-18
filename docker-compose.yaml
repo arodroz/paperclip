@@ -17,6 +17,8 @@ services:
     expose:
       - "3100"
     environment:
+      # Coolify magic var: generates Traefik labels for this service on port 3100.
+      SERVICE_FQDN_SERVER_3100: "https://paperclip.home.anteras.org"
       DATABASE_URL: "${DATABASE_URL:?DATABASE_URL must be set}"
       PORT: "3100"
       HOST: "0.0.0.0"
