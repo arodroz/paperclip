@@ -2,82 +2,81 @@
 
 Goal: host a single-user Paperclip instance at `https://paperclip.home.anteras.org`, reachable from any Tailscale-connected device, using OpenRouter as the sole LLM backend via the `opencode-local` adapter.
 
-Source of truth: this plan. Phase table below doubles as the todo list — check off as work lands, capture commit hashes in the repo purposing this scaffolding (`arodroz/paperclip`).
+Source of truth: this plan. Phase table below doubles as the todo list. Capture commit hashes in the Notes column as phases land.
 
 ## Locked decisions
 
 | # | Topic | Decision |
 |---|---|---|
-| 1 | Source | Upstream `paperclipai/paperclip`, no fork. Pinned to tag `v2026.416.0` (2026-04-16). |
-| 2 | Server | `gpu-server` (Coolify UUID `noo0so0kco00wk8kc8skss48`). |
-| 3 | Network | Tailscale-reachable. FQDN `paperclip.home.anteras.org` → `100.74.233.23` (Tailscale IP of `gpu-server`, same node that serves `home.home.anteras.org`). |
-| 4 | TLS | Wildcard Let's Encrypt cert `*.home.anteras.org` (valid through 2026-07-10) already deployed on Traefik. No per-subdomain cert work. |
-| 5 | Source type | Docker Compose, using upstream `docker/docker-compose.yml` as the starting point. |
-| 6 | Adapter | `opencode-local` only. Models routed via OpenRouter. `claude-local` and `codex-local` left dormant (their CLIs ship in the image but no agent will be configured against them). |
-| 7 | `PAPERCLIP_PUBLIC_URL` | `https://paperclip.home.anteras.org` (hard-coded in the compose, not `${…:-default}`). |
-| 8 | Secrets storage | Coolify masked env vars. |
-| 9 | `BETTER_AUTH_SECRET` | `openssl rand -base64 48`, generated once, pasted into Coolify. Never rotated casually. |
-| 10 | OpenRouter key scope | Dedicated key named `paperclip-home-anteras`, key-level credit limit **$20** initially. |
-| 11 | OpenRouter env vars | `OPENROUTER_API_KEY=sk-or-...` + `OPENAI_BASE_URL=https://openrouter.ai/api/v1`. No `OPENAI_API_KEY`, no `ANTHROPIC_API_KEY`. |
-| 12 | First-user bootstrap | `paperclipai auth bootstrap-ceo` run via Coolify in-UI terminal after first successful deploy. Default 72h expiry; visit the printed invite URL to sign up as instance admin. |
-| 13 | Backups — Postgres | Coolify scheduled `pg_dump` to `garage` S3. Daily. Retain 14 days. |
-| 14 | Backups — `paperclip-data` volume | Weekly `tar czf` → `garage` S3. Retain 4 weeks. |
-| 15 | Backup validation | One-time restore test after first deploy (new ephemeral Coolify resource, restore both backups, confirm login works). |
-| 16 | Resource limits | `server`: 4 cpus / 6 GB mem / 6 GB memswap. `db`: 1 cpu / 1 GB mem. |
-| 17 | Version update | Manual bumps. Weekly cron on `localhost` (Mon 09:00) checks `releases/latest`; writes an Obsidian note when a new tag is available. |
-| 18 | Uptime monitor | `uptime-kuma` HTTP check on `https://paperclip.home.anteras.org/api/health`, 60s interval, alert after 2 consecutive fails. |
-| 19 | Logs | `dozzle` picks up the containers automatically — no config needed. |
-| 20 | Homepage tile | Add via `sync-homepage` skill after first successful deploy. Group: "AI". |
-| 21 | Coolify project | New project `paperclip`, description: "Autonomous agent orchestration — single-user, Tailscale-private." |
-| 22 | `arodroz/paperclip` repo | **Repurposed**, not deleted. Holds this plan, the in-Coolify compose reference, bootstrap notes, and backup/restore scripts. |
+| 1 | Source | Upstream `paperclipai/paperclip`, built via Docker Compose remote git context (`https://github.com/paperclipai/paperclip.git#v2026.416.0`). Pinned at the tag. Not forked. |
+| 2 | Deploy repo | `arodroz/paperclip` (public). Holds the Coolify compose, plan, scripts. Coolify points Git Source here, not at upstream. |
+| 3 | Server | `gpu-server` (Coolify UUID `noo0so0kco00wk8kc8skss48`). |
+| 4 | Network | Tailscale-reachable. FQDN `paperclip.home.anteras.org` → `100.74.233.23`. |
+| 5 | TLS | Wildcard Let's Encrypt cert `*.home.anteras.org` (valid through 2026-07-10). Automatic. |
+| 6 | Source type | Docker Compose. Coolify clones `arodroz/paperclip@main`, reads `/docker-compose.yaml`. |
+| 7 | Database | **Reuse** existing shared Coolify Postgres (UUID `bokc0gko8g0s4g0sgs484s00`, Postgres 16-alpine). New database `paperclip` owned by new role `paperclip`. Connection over `coolify` Docker network by UUID hostname. |
+| 8 | Adapter | `opencode-local` only. Models routed via OpenRouter. `claude-local` and `codex-local` left dormant. |
+| 9 | `PAPERCLIP_PUBLIC_URL` | `https://paperclip.home.anteras.org` (hard-coded in compose). |
+| 10 | Domain routing | Coolify `SERVICE_FQDN_SERVER_3100` magic env var in compose — auto-generates Traefik labels at deploy. UI "Domains for server" field did not persist via Livewire over Playwright. |
+| 11 | Secrets storage | Coolify env vars (app-level). Real values injected at container start. |
+| 12 | `BETTER_AUTH_SECRET` | Generated via `openssl rand -base64 48`. Set once. Never rotated casually. |
+| 13 | OpenRouter key scope | Dedicated key `sk-or-v1-...` with key-level $20 cap on OpenRouter dashboard. |
+| 14 | OpenRouter env | `OPENROUTER_API_KEY` + `OPENAI_BASE_URL=https://openrouter.ai/api/v1`. No `OPENAI_API_KEY`, no `ANTHROPIC_API_KEY`. |
+| 15 | First-user bootstrap | `paperclipai auth bootstrap-ceo` run via Coolify in-UI terminal on the server container after first deploy. |
+| 16 | Backups — Postgres | Coolify scheduled `pg_dump` to `garage` S3 on the **shared** Postgres resource. Daily. Retain 14 days. |
+| 17 | Backups — `paperclip-data` volume | Weekly `tar czf` → `garage` S3. Retain 4 weeks. |
+| 18 | Backup validation | One-time restore test after first deploy. |
+| 19 | Resource limits | Server container: 4 cpus / 6 GB mem, declared in compose `deploy.resources.limits`. No db limits (db is shared, not ours to size). |
+| 20 | Version update | Manual bumps. Weekly cron on `localhost` (Mon 09:00) → Obsidian note on new tag. |
+| 21 | Uptime monitor | `uptime-kuma` HTTP check on `/api/health`, 60s, alert after 2 fails. |
+| 22 | Logs | `dozzle` — no config. |
+| 23 | Homepage tile | Via `sync-homepage` skill, group AI. |
+| 24 | Coolify project | `paperclip` (UUID `lpn8bbi8i0bxsut0786r93fh`). |
 
-## Compose mutations (applied in Coolify's in-UI compose editor)
+## Compose structure
 
-Base file: upstream `docker/docker-compose.yml` at tag `v2026.416.0`.
+Kept at `docker-compose.yaml` in the repo root. One service, `server`. Builds via remote git context at the pinned tag. No local `db` service — we reference the shared Coolify Postgres over the `coolify` network via `DATABASE_URL`.
 
-1. `server.ports`: remove `"3100:3100"`. Add `expose: ["3100"]` so Coolify-attached Traefik can route but the port isn't bound on the host.
-2. `server.environment.PAPERCLIP_PUBLIC_URL`: hard-code to `https://paperclip.home.anteras.org` (drop the `${…:-http://localhost:3100}` fallback — defaults cause auth/invite bugs if env plumbing misfires).
-3. `db.ports`: remove `"5432:5432"`. Postgres is only reachable from the `server` container via the compose network.
-4. Both services: add `deploy.resources.limits` with the values from decision #16. Also add `deploy.resources.reservations` matching `limits` for `db` only (Postgres benefits from predictable allocation; `server` is bursty and should not reserve).
+Magic Coolify env vars in the compose:
+- `SERVICE_FQDN_SERVER_3100` — triggers Traefik label regeneration with our FQDN.
 
-Also add to `server.environment` once OpenRouter key is in Coolify secrets:
+Variables interpolated from Coolify app env:
+- `DATABASE_URL` — `postgres://paperclip:...@bokc0gko8g0s4g0sgs484s00:5432/paperclip`
+- `BETTER_AUTH_SECRET`
+- `OPENROUTER_API_KEY`
 
-```yaml
-OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set}"
-OPENAI_BASE_URL: "https://openrouter.ai/api/v1"
-```
-
-Re-apply these four mutations each time we bump the pinned tag; upstream compose may drift.
+Bumping upstream: edit the `build.context` tag fragment (`#v2026.416.0` → new tag), commit, redeploy. Nothing else needs to change unless upstream's Dockerfile breaks compatibility.
 
 ## Phases
 
 | Phase | Action | Status | Notes |
 |---|---|---|---|
-| P1 | Prereq: verify OpenRouter key exists; set key-level $20 cap; confirm name is `paperclip-home-anteras` | [ ] | User-owned; agent cannot do this step. |
-| P2 | Coolify: create project `paperclip` | [ ] | Via MCP `projects action=create`. |
-| P3 | Coolify: create Docker Compose app in `paperclip` project on `gpu-server`, git source `paperclipai/paperclip` ref `v2026.416.0`, compose path `docker/docker-compose.yml` | [ ] | Coolify will clone the repo on first deploy. |
-| P4 | Coolify: set FQDN `paperclip.home.anteras.org` on the `server` service | [ ] | Triggers Traefik label generation. |
-| P5 | Coolify: paste masked env vars: `BETTER_AUTH_SECRET`, `OPENROUTER_API_KEY` | [ ] | `BETTER_AUTH_SECRET` via `openssl rand -base64 48`. |
-| P6 | Coolify: apply compose mutations 1–4 in the in-UI compose editor | [ ] | Save diff for future tag bumps. |
-| P7 | Coolify: first deploy; wait for health check; verify `curl https://paperclip.home.anteras.org/api/health` returns `{"status":"ok"}` from tailnet | [ ] | Expect 3–8 min build. |
-| P8 | Coolify terminal: `paperclipai auth bootstrap-ceo`; visit printed invite URL; sign up as instance admin | [ ] | Token in browser history is harmless; DB stores only hash. |
-| P9 | Coolify: configure Postgres scheduled backup to `garage` S3, daily, 14-day retention | [ ] | Uses Coolify's built-in Postgres backup UI. |
-| P10 | Coolify: add scheduled task on `localhost` server — weekly `tar` of `paperclip-data` volume → `garage` S3, 4-week retention | [ ] | Small shell one-liner via Coolify cron. |
-| P11 | Restore test: spin up throwaway Coolify app, restore latest backups, verify login works, then delete | [ ] | Only way to know backups work. |
-| P12 | Configure first agent: hire CEO in UI with `opencode-local` adapter + a chosen OpenRouter model; set per-agent monthly budget (e.g., $5) | [ ] | Layer 3 of spend control. |
-| P13 | `uptime-kuma`: add HTTP monitor on `/api/health`, 60s, 2-fail threshold | [ ] | Existing uptime-kuma project. |
-| P14 | Scheduled task on `localhost` (Mon 09:00): check `gh api repos/paperclipai/paperclip/releases/latest`, compare to current ref, write Obsidian note if newer | [ ] | Script lives in this repo under `scripts/check-upstream-tag.sh`. |
-| P15 | `sync-homepage` skill: add tile for `paperclip.home.anteras.org` in the "AI" group | [ ] | Do after P7 passes. |
-| P16 | Repurpose `arodroz/paperclip`: add README declaring its role as the deployment scaffolding repo; commit this plan; add the exact Coolify compose as `reference/docker-compose.coolify.yml` | [ ] | So future-me knows why it exists. |
+| P1 | Prereq: OpenRouter key + $20 cap | [x] | User-owned. Key pasted into Coolify env var. |
+| P2 | Create Coolify project `paperclip` | [x] | UUID `lpn8bbi8i0bxsut0786r93fh`. |
+| P3 | Provision `paperclip` DB + role on shared Postgres | [x] | Via Coolify Terminal + psql. User `paperclip`, DB `paperclip`, pg schema perms granted. |
+| P4 | Create Coolify compose app from `arodroz/paperclip@main` | [x] | App UUID `f13ye319mc8wu6gy11zesaa4`. `docker_compose_location=/docker-compose.yaml`. |
+| P5 | Set FQDN | [x] | Via `SERVICE_FQDN_SERVER_3100` in compose (UI field didn't persist; magic env var does the job). |
+| P6 | Set secrets env vars (BETTER_AUTH_SECRET, OPENROUTER_API_KEY, DATABASE_URL) | [x] | Via MCP `env_vars update`. |
+| P7 | First deploy | [ ] | Deployment UUID `owjqjcr0rck9akwfqzzqebdu` in progress. Expect 3-8 min build. |
+| P8 | Verify `/api/health` over Tailscale | [ ] | `curl https://paperclip.home.anteras.org/api/health`. |
+| P9 | Bootstrap CEO | [ ] | `paperclipai auth bootstrap-ceo` in Coolify terminal on server container. |
+| P10 | Configure shared Postgres scheduled backup to `garage` S3 | [ ] | Via Coolify Backups tab on the postgresql resource. Daily, 14d retention. |
+| P11 | Weekly `paperclip-data` tar → garage | [ ] | Coolify scheduled task on localhost. |
+| P12 | Restore test | [ ] | Throwaway resource, restore both, verify login. |
+| P13 | Hire first agent in Paperclip UI (opencode + OpenRouter model + $5 budget) | [ ] | Layer-3 spend control. |
+| P14 | uptime-kuma monitor on `/api/health` | [ ] | 60s, 2-fail threshold. |
+| P15 | Tag-check cron (Mon 09:00 → Obsidian) | [ ] | Script at `scripts/check-upstream-tag.sh` in this repo. |
+| P16 | Homepage tile via sync-homepage skill | [ ] | Group AI. |
+| P17 | Commit this plan + README to arodroz/paperclip | [~] | Plan and README committed. Plan will be re-committed after completion. |
 
 ## Open questions
 
-- None. All branches resolved during the grill-me session.
+- Coolify UI "Domains for server" field did not persist via Playwright — `docker_compose_domains` stayed `null`. We relied on `SERVICE_FQDN_<SVC>_<PORT>` magic var instead. Need to confirm it actually wires Traefik correctly when we inspect `custom_labels` after first deploy.
 
 ## Notes carried forward
 
+- Postgres 16 on shared instance vs upstream's 17 reference — app only needs Drizzle-compatible PG (12+), not 17-specific features.
 - Upstream commit `b9a80dc` (2026-04-17) added multi-user access + invite flows (#3784). Not in `v2026.416.0`. Bump when next tag ships if you want that UI.
-- `OPENCODE_ALLOW_ALL_MODELS=true` is already set in the upstream Dockerfile — do not override.
-- Paperclip's default `PAPERCLIP_DEPLOYMENT_MODE=authenticated` + `EXPOSURE=private` are correct for our setup; don't change.
-- `PAPERCLIP_ALLOWED_HOSTNAMES` is not needed — the host is auto-derived from `PAPERCLIP_PUBLIC_URL`. If we ever add a MagicDNS alias (e.g. `coolify.tailnet.ts.net`), add it here.
-- `pi-local` was considered and rejected: Pi CLI is not baked into the upstream image, and we agreed no fork. Revisit if upstream starts shipping pi in the image.
+- `OPENCODE_ALLOW_ALL_MODELS=true` is set in the upstream Dockerfile — do not override.
+- `PAPERCLIP_ALLOWED_HOSTNAMES` not needed — derived from `PAPERCLIP_PUBLIC_URL`.
+- `pi-local` was considered and rejected: Pi CLI isn't baked into the upstream image, and we agreed no fork.
