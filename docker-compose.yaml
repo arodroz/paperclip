@@ -43,6 +43,10 @@ services:
       # We join multiple networks (per-app + coolify for DB access); without
       # this hint, Traefik may try the wrong interface and return 503.
       - "traefik.docker.network=coolify"
+      # Pin the backend port explicitly. Without this Traefik guesses from
+      # exposed ports, which was producing "no available server" 503s.
+      - "traefik.http.services.https-0-f13ye319mc8wu6gy11zesaa4-server.loadbalancer.server.port=3100"
+      - "traefik.http.services.http-0-f13ye319mc8wu6gy11zesaa4-server.loadbalancer.server.port=3100"
     deploy:
       resources:
         limits:
