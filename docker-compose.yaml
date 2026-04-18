@@ -34,6 +34,11 @@ services:
       OPENAI_BASE_URL: "https://openrouter.ai/api/v1"
     volumes:
       - paperclip-data:/paperclip
+    extra_hosts:
+      # Required so `host.docker.internal` resolves inside the container on Linux.
+      # DATABASE_URL points at host.docker.internal:5432 to reach the shared
+      # Coolify Postgres which lives on a different Docker network.
+      - "host.docker.internal:host-gateway"
     deploy:
       resources:
         limits:
