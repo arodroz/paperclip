@@ -38,6 +38,11 @@ services:
     networks:
       - default
       - coolify
+    labels:
+      # Tell Coolify-attached Traefik which network to route backend traffic on.
+      # We join multiple networks (per-app + coolify for DB access); without
+      # this hint, Traefik may try the wrong interface and return 503.
+      - "traefik.docker.network=coolify"
     deploy:
       resources:
         limits:
