@@ -3,10 +3,17 @@
 # via Docker Compose's remote git build context. This repo owns only the
 # deploy config; the app source stays at upstream.
 #
-# Uses the shared Coolify Postgres instance (bokc0gko8g0s4g0sgs484s00) on
-# database 'paperclip' with user 'paperclip'. To reach Postgres (which lives
-# on the coolify Docker network), this service joins the coolify network as
-# an external attachment and addresses Postgres by its container-UUID hostname.
+# Topology: Paperclip runs on gpu-server (192.168.1.65). Public Traefik runs
+# on the Coolify localhost server (192.168.1.34). Because Traefik labels on a
+# container don't cross Docker hosts, we do two cross-host things:
+#   1. Publish 3100 on gpu-server's host so the port is reachable from the LAN.
+#   2. Add a dynamic Traefik YAML on the localhost proxy routing
+#      paperclip.home.anteras.org -> http://192.168.1.65:3100 (managed in
+#      Coolify UI: Servers > localhost > Proxy > Dynamic Configurations).
+#
+# DB connectivity: the shared Coolify Postgres (bokc0gko8g0s4g0sgs484s00)
+# lives on the coolify Docker network on gpu-server. We attach to that network
+# so DATABASE_URL can use the container-UUID hostname over the internal net.
 #
 # Bump upstream by editing the build.context ref fragment, commit, redeploy.
 
@@ -18,11 +25,9 @@ services:
       # same day in 407e76c, which e93e418 includes.
       context: https://github.com/paperclipai/paperclip.git#e93e418cbf7997a29ff258d51d761572e69bda92
       dockerfile: Dockerfile
-    expose:
-      - "3100"
+    ports:
+      - "3100:3100"
     environment:
-      # Coolify magic var: generates Traefik labels for this service on port 3100.
-      SERVICE_FQDN_SERVER_3100: "https://paperclip.home.anteras.org"
       DATABASE_URL: "${DATABASE_URL:?DATABASE_URL must be set}"
       PORT: "3100"
       HOST: "0.0.0.0"
@@ -38,15 +43,6 @@ services:
     networks:
       - default
       - coolify
-    labels:
-      # Tell Coolify-attached Traefik which network to route backend traffic on.
-      # We join multiple networks (per-app + coolify for DB access); without
-      # this hint, Traefik may try the wrong interface and return 503.
-      - "traefik.docker.network=coolify"
-      # Pin the backend port explicitly. Without this Traefik guesses from
-      # exposed ports, which was producing "no available server" 503s.
-      - "traefik.http.services.https-0-f13ye319mc8wu6gy11zesaa4-server.loadbalancer.server.port=3100"
-      - "traefik.http.services.http-0-f13ye319mc8wu6gy11zesaa4-server.loadbalancer.server.port=3100"
     deploy:
       resources:
         limits:
