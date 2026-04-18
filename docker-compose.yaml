@@ -26,7 +26,10 @@ services:
       context: https://github.com/paperclipai/paperclip.git#e93e418cbf7997a29ff258d51d761572e69bda92
       dockerfile: Dockerfile
     ports:
-      - "3100:3100"
+      # Host port 3110 (3100 already taken on gpu-server by a Next.js app).
+      # Container port stays 3100 — Paperclip is hardcoded to that.
+      # Dynamic Traefik config on localhost proxy targets http://192.168.1.65:3110.
+      - "3110:3100"
     environment:
       DATABASE_URL: "${DATABASE_URL:?DATABASE_URL must be set}"
       PORT: "3100"
