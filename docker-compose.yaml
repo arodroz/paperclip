@@ -15,7 +15,7 @@ services:
       # Pinned to post-tag commit that includes Dockerfile fix for gh install
       # (keyring hash at v2026.416.0 drifted; fixed in e93e418 on 2026-04-16).
       # When upstream cuts a new tag, switch this back to #vYYYY.MMDD.0.
-      context: https://github.com/paperclipai/paperclip.git#e93e418cbf79
+      context: https://github.com/paperclipai/paperclip.git#e93e418cbf7997a29ff258d51d761572e69bda92
       dockerfile: Dockerfile
     expose:
       - "3100"
